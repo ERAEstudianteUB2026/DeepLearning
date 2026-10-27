@@ -124,6 +124,79 @@ def build_steps(net,X,h0,target,result,grad,eta):
             'La actualización usa descenso del gradiente, sin diferenciación automática.')
     return steps
 
+# Capa visual adicional: conserva íntegramente los pasos matemáticos originales.
+import re
+import html
+
+def _visual_context(step):
+    section=step['section']; title=step['title']
+    m=re.search(r'(?:Tiempo |t=)([123])',title)
+    t=int(m.group(1)) if m else (3 if section=='Forward' else 1)
+    neuron=None
+    match=re.search(r'a_\{([12]),|h_\{([12]),|neurona ([12])',title)
+    if match:
+        neuron=int(next(v for v in match.groups() if v is not None))
+    return section,t,neuron
+
+def _network_svg(step):
+    section,t,neuron=_visual_context(step)
+    backward=section=='Backward'; updating=section=='Actualización'
+    active='#e59b3c' if backward else '#25a9a0'
+    muted='#81909f'
+    items=['<svg viewBox="0 0 840 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RNN desplegada en tres tiempos">',
+           '<defs><marker id="arrowforward" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#25a9a0"/></marker><marker id="arrowback" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#e59b3c"/></marker></defs>']
+    for k in range(1,4):
+        cx=130+(k-1)*270
+        selected=k==t or updating
+        stroke=active if selected else muted
+        opacity='1' if selected else '.35'
+        items.append(f'<rect x="{cx-107}" y="20" width="214" height="196" rx="13" fill="{active}" fill-opacity="{.075 if selected else .015}" stroke="{stroke}" stroke-opacity="{opacity}" stroke-width="{2.4 if selected else 1}"/>')
+        items.append(f'<text x="{cx}" y="43" text-anchor="middle" fill="#dbe6ee" font-size="15">Instante t = {k}</text>')
+        for j,y in enumerate((95,157),start=1):
+            items.append(f'<circle cx="{cx-68}" cy="{y}" r="19" fill="#475569" fill-opacity=".25" stroke="{muted}"/>')
+            items.append(f'<text x="{cx-68}" y="{y+5}" text-anchor="middle" fill="#e6edf4" font-size="14">x{j}</text>')
+            hi=selected and (neuron is None or neuron==j)
+            hc=active if hi else muted
+            items.append(f'<circle cx="{cx+67}" cy="{y}" r="22" fill="{hc}" fill-opacity="{.35 if hi else .1}" stroke="{hc}" stroke-width="{3 if hi else 1}"/>')
+            items.append(f'<text x="{cx+67}" y="{y+5}" text-anchor="middle" fill="#f0f6fa" font-size="14">h{j}</text>')
+        for y1 in (95,157):
+            for j,y2 in enumerate((95,157),start=1):
+                hi=selected and (neuron is None or neuron==j)
+                items.append(f'<line x1="{cx-48}" y1="{y1}" x2="{cx+44}" y2="{y2}" stroke="{active if hi else muted}" stroke-width="{2.6 if hi else 1}" stroke-opacity="{.95 if hi else .23}"/>')
+        items.append(f'<text x="{cx}" y="198" text-anchor="middle" fill="#b8c8d5" font-size="12">Wₓ · activación tanh</text>')
+    for k in (1,2):
+        left=130+(k-1)*270+91;right=130+k*270-91
+        relevant=updating or (k+1==t if not backward else k==t)
+        col=active if relevant else muted
+        x1,x2=(right,left) if backward else (left,right)
+        marker='arrowback' if backward else 'arrowforward'
+        items.append(f'<line x1="{x1}" y1="126" x2="{x2}" y2="126" stroke="{col}" stroke-width="{3.4 if relevant else 1.5}" stroke-opacity="{1 if relevant else .3}" marker-end="url(#{marker})"/>')
+        items.append(f'<text x="{(left+right)/2}" y="110" text-anchor="middle" fill="{col}" font-size="13">{"Wₕᵀ" if backward else "Wₕ"}</text>')
+    items.append(f'<text x="420" y="237" text-anchor="middle" fill="#dbe6ee" font-size="13">{"Retropropagación: t=3 → t=1" if backward else "Actualización de los pesos compartidos" if updating else "Propagación hacia adelante: t=1 → t=3"}</text>')
+    items.append('</svg>')
+    return ''.join(items)
+
+def show_visual_step(step, result):
+    section,t,neuron=_visual_context(step)
+    st.markdown('#### Red desplegada: ¿dónde ocurre esta operación?')
+    st.markdown(_network_svg(step),unsafe_allow_html=True)
+    if section=='Forward':
+        if 'Predicción' in step['title']:
+            st.info('La salida combina los dos estados ocultos del último instante; solo en t=3 se calcula la predicción.')
+        elif 'Pérdida' in step['title']:
+            st.info('La pérdida compara la predicción con el objetivo. Este error inicia el backward.')
+        else:
+            st.info(f'En t={t}, las entradas xₜ y el estado hₜ₋₁ alimentan las dos neuronas ocultas. Se destaca la neurona del cálculo actual.')
+    elif section=='Backward':
+        st.info(f'El error retrocede por las conexiones recurrentes. En t={t} se aplica la regla de la cadena y los pesos compartidos reciben contribuciones de distintos instantes.')
+    else:
+        st.info('Los gradientes acumulados permiten corregir cada matriz de pesos mediante descenso del gradiente.')
+    if section=='Forward' and step['title'].startswith('Tiempo') and ': h_' in step['title']:
+        with st.expander('Ver la función tanh y el punto de activación',expanded=False):
+            z=np.linspace(-3,3,121)
+            st.line_chart(pd.DataFrame({'tanh(z)':np.tanh(z)},index=z),x_label='Preactivación z',y_label='tanh(z)')
+            st.caption('La función tanh transforma las preactivaciones al intervalo (-1,1).')
+
 with st.sidebar:
     st.header('Datos del ejercicio')
     st.caption('Una fila por línea; valores separados por comas.')
@@ -172,6 +245,7 @@ with manual:
     with c3:
         st.progress((st.session_state.step+1)/len(steps),text=f'Paso {st.session_state.step+1} de {len(steps)}')
     current=steps[st.session_state.step]
+    show_visual_step(current,result)
     st.markdown(f'### {current["section"]} · {current["title"]}')
     st.markdown(f'**{current["phase"]}**')
     st.latex(current['latex'])
