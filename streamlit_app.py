@@ -182,58 +182,142 @@ def _visual_context(step):
     return section,t,neuron
 
 def _network_svg(step):
-    section,t,neuron=_visual_context(step)
-    backward=section=='Backward'; updating=section=='Actualización'
-    active='#e59b3c' if backward else '#25a9a0'
-    muted='#81909f'
-    items=['<svg viewBox="0 0 1110 245" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RNN desplegada en tres tiempos">',
-           '<defs><marker id="arrowforward" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#25a9a0"/></marker><marker id="arrowback" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#e59b3c"/></marker></defs>']
-    for k in range(1,4):
-        cx=130+(k-1)*270
-        selected=k==t or updating
-        stroke=active if selected else muted
-        opacity='1' if selected else '.35'
-        items.append(f'<rect x="{cx-107}" y="20" width="214" height="196" rx="13" fill="{active}" fill-opacity="{.075 if selected else .015}" stroke="{stroke}" stroke-opacity="{opacity}" stroke-width="{2.4 if selected else 1}"/>')
-        items.append(f'<text x="{cx}" y="43" text-anchor="middle" fill="#dbe6ee" font-size="15">Instante t = {k}</text>')
-        for j,y in enumerate((95,157),start=1):
-            items.append(f'<circle cx="{cx-68}" cy="{y}" r="19" fill="#475569" fill-opacity=".25" stroke="{muted}"/>')
-            items.append(f'<text x="{cx-68}" y="{y+5}" text-anchor="middle" fill="#e6edf4" font-size="14">x{j}</text>')
-            hi=selected and (neuron is None or neuron==j)
-            hc=active if hi else muted
-            items.append(f'<circle cx="{cx+67}" cy="{y}" r="22" fill="{hc}" fill-opacity="{.35 if hi else .1}" stroke="{hc}" stroke-width="{3 if hi else 1}"/>')
-            items.append(f'<text x="{cx+67}" y="{y+5}" text-anchor="middle" fill="#f0f6fa" font-size="14">h{j}</text>')
-        for y1 in (95,157):
-            for j,y2 in enumerate((95,157),start=1):
-                hi=selected and (neuron is None or neuron==j)
-                items.append(f'<line x1="{cx-48}" y1="{y1}" x2="{cx+44}" y2="{y2}" stroke="{active if hi else muted}" stroke-width="{2.6 if hi else 1}" stroke-opacity="{.95 if hi else .23}"/>')
-        items.append(f'<text x="{cx}" y="198" text-anchor="middle" fill="#b8c8d5" font-size="12">Wₓ · activación tanh</text>')
-    for k in (1,2):
-        left=130+(k-1)*270+91;right=130+k*270-91
-        relevant=updating or (k+1==t if not backward else k==t)
-        col=active if relevant else muted
-        x1,x2=(right,left) if backward else (left,right)
-        marker='arrowback' if backward else 'arrowforward'
-        items.append(f'<line x1="{x1}" y1="126" x2="{x2}" y2="126" stroke="{col}" stroke-width="{3.4 if relevant else 1.5}" stroke-opacity="{1 if relevant else .3}" marker-end="url(#{marker})"/>')
-        items.append(f'<text x="{(left+right)/2}" y="110" text-anchor="middle" fill="{col}" font-size="13">{"Wₕᵀ" if backward else "Wₕ"}</text>')
-    # Capa de salida y bloque de pérdida, activos en las operaciones pertinentes.
-    is_output=('Predicción' in step['title'] or 'Derivada de salida' in step['title'])
-    is_loss=('Pérdida' in step['title'] or 'Derivada de salida' in step['title'])
-    outcol=active if is_output or backward else muted
-    for yy in (95,157):
-        items.append(f'<line x1="737" y1="{yy}" x2="879" y2="126" stroke="{outcol}" stroke-width="{3 if is_output or backward else 1.3}" stroke-opacity="{1 if is_output or backward else .4}"/>')
-    items.append(f'<text x="810" y="83" text-anchor="middle" fill="{outcol}" font-size="14">Wᵧ</text>')
-    items.append(f'<circle cx="903" cy="126" r="29" fill="{outcol}" fill-opacity=".20" stroke="{outcol}" stroke-width="{3 if is_output else 1.5}"/>')
-    items.append('<text x="903" y="131" text-anchor="middle" fill="#dbe6ee" font-size="17">ŷ₃</text>')
-    losscol=active if is_loss or backward else muted
-    items.append(f'<line x1="932" y1="126" x2="975" y2="126" stroke="{losscol}" stroke-width="2"/>')
-    items.append(f'<rect x="976" y="101" width="112" height="50" rx="10" fill="{losscol}" fill-opacity=".17" stroke="{losscol}" stroke-width="{3 if is_loss else 1.5}"/>')
-    items.append('<text x="1032" y="130" text-anchor="middle" fill="#dbe6ee" font-size="15">Pérdida L</text>')
+    """Arquitectura completa y gradientes: conexiones reales entre estados ocultos."""
+    section, t, neuron = _visual_context(step)
+    backward = section == 'Backward'
+    updating = section == 'Actualización'
+    title = step['title']
+    teal, orange, gray = '#087f78', '#c66c14', '#93a4b5'
+    active = orange if backward else teal
+    ink = '#263647'
+    pieces = [
+        '<svg viewBox="0 0 1600 345" xmlns="http://www.w3.org/2000/svg" '
+        'role="img" aria-label="RNN 2-2-1 desplegada: entradas, estados ocultos, '
+        'conexiones recurrentes, salida y pérdida" style="width:100%;height:auto">',
+        '<defs>',
+        '<marker id="bptt_fwd" markerWidth="7" markerHeight="7" refX="6" refY="3" '
+        'orient="auto"><path d="M0,0 L6,3 L0,6" fill="#087f78"/></marker>',
+        '<marker id="bptt_back" markerWidth="7" markerHeight="7" refX="6" refY="3" '
+        'orient="auto"><path d="M0,0 L6,3 L0,6" fill="#c66c14"/></marker>',
+        '</defs>'
+    ]
+    centers = [270, 630, 990]
+    ys = [207, 264]
+    # Marco de cada instante. Los nodos x están arriba y los nodos h abajo,
+    # para que las conexiones recurrentes no terminen visualmente en las entradas.
+    for k, cx in enumerate(centers, start=1):
+        selected = (k == t) or updating
+        border = active if selected else gray
+        pieces.append(f'<rect x="{cx-122}" y="29" width="244" height="278" rx="15" '
+                      f'fill="{active}" fill-opacity="{.065 if selected else .014}" '
+                      f'stroke="{border}" stroke-width="{3 if selected else 1.4}"/>')
+        pieces.append(f'<text x="{cx}" y="56" text-anchor="middle" fill="{ink}" '
+                      f'font-size="18" font-weight="700">Instante t = {k}</text>')
+        pieces.append(f'<text x="{cx-79}" y="80" text-anchor="middle" '
+                      f'fill="{ink}" font-size="13">Entrada x{k}</text>')
+        pieces.append(f'<text x="{cx+80}" y="80" text-anchor="middle" '
+                      f'fill="{ink}" font-size="13">Estado h{k}</text>')
+        # Conexiones Wx: las dos entradas alcanzan ambas neuronas ocultas.
+        for i, yi in enumerate((117, 160), start=1):
+            for j, yj in enumerate(ys, start=1):
+                highlight = selected and (neuron is None or neuron == j) and not backward
+                color = teal if highlight else gray
+                pieces.append(f'<line x1="{cx-61}" y1="{yi}" x2="{cx+55}" y2="{yj}" '
+                              f'stroke="{color}" stroke-width="{2.8 if highlight else 1.2}" '
+                              f'stroke-opacity="{1 if highlight else .45}"/>')
+        for j, y in enumerate((117, 160), start=1):
+            pieces.append(f'<circle cx="{cx-79}" cy="{y}" r="19" fill="#e2e8f0" '
+                          f'stroke="{gray}" stroke-width="1.5"/>')
+            pieces.append(f'<text x="{cx-79}" y="{y+5}" text-anchor="middle" '
+                          f'fill="{ink}" font-size="15">x{j}</text>')
+        for j, y in enumerate(ys, start=1):
+            hi = selected and (neuron is None or neuron == j)
+            col = active if hi else gray
+            pieces.append(f'<circle cx="{cx+80}" cy="{y}" r="25" '
+                          f'fill="{col}" fill-opacity="{.23 if hi else .10}" '
+                          f'stroke="{col}" stroke-width="{3.4 if hi else 1.4}"/>')
+            pieces.append(f'<text x="{cx+80}" y="{y+5}" text-anchor="middle" '
+                          f'fill="{ink}" font-size="17" font-weight="600">h{j}</text>')
+        pieces.append(f'<text x="{cx}" y="293" text-anchor="middle" '
+                      f'fill="{ink}" font-size="13">Wₓ · tanh</text>')
+    # h0 es un estado inicial, no una entrada x1.
+    pieces.append(f'<text x="51" y="166" text-anchor="middle" fill="{ink}" '
+                  f'font-size="16" font-weight="700">Estado h₀</text>')
+    for j, y in enumerate(ys, start=1):
+        pieces.append(f'<circle cx="51" cy="{y}" r="22" fill="#e2e8f0" '
+                      f'stroke="{gray}" stroke-width="1.7"/>')
+        pieces.append(f'<text x="51" y="{y+5}" text-anchor="middle" '
+                      f'fill="{ink}" font-size="15">h₀,{j}</text>')
+        color = teal if section == 'Forward' and t == 1 else gray
+        for dest in ys:
+            pieces.append(f'<line x1="73" y1="{y}" x2="{centers[0]+54}" y2="{dest}" '
+                          f'stroke="{color}" stroke-opacity="{.85 if color==teal else .27}" '
+                          f'stroke-width="{2 if color==teal else 1.1}"/>')
+    pieces.append(f'<text x="112" y="187" fill="{ink}" font-size="13">Wₕ</text>')
+    # Cuatro conexiones Wh entre h(t-1) y h(t), nunca entre nodos de entrada.
+    for k in (1, 2):
+        src = centers[k-1] + 80
+        dst = centers[k] + 80
+        selected_edge = (backward and t == k) or (not backward and t == k+1)
+        if updating:
+            selected_edge = False
+        for i, y1 in enumerate(ys, start=1):
+            for j, y2 in enumerate(ys, start=1):
+                highlight = selected_edge and (neuron is None or (i if backward else j) == neuron)
+                color = active if highlight else gray
+                x1, yy1, x2, yy2 = (dst-26,y2,src+26,y1) if backward else (src+26,y1,dst-26,y2)
+                pieces.append(f'<line x1="{x1}" y1="{yy1}" x2="{x2}" y2="{yy2}" '
+                              f'stroke="{color}" stroke-opacity="{.9 if highlight else .35}" '
+                              f'stroke-width="{3.1 if highlight else 1.3}" '
+                              + (f'marker-end="url(#{"bptt_back" if backward else "bptt_fwd"})"' if highlight else '') + '/>')
+        pieces.append(f'<text x="{(src+dst)/2}" y="187" text-anchor="middle" '
+                      f'fill="{active if selected_edge else ink}" font-size="16" font-weight="600">'
+                      f'{"Wₕᵀ · gradiente" if backward else "Wₕ"}</text>')
+    # Salida lineal y pérdida. En backward las flechas invierten su dirección.
+    is_output = ('Predicción' in title or 'Derivada de salida' in title or
+                 (backward and t == 3))
+    is_loss = ('Pérdida' in title or 'Derivada de salida' in title)
+    out_color = orange if backward else teal
+    for y in ys:
+        if backward:
+            x1,y1,x2,y2 = 1220,235,1097,y
+        else:
+            x1,y1,x2,y2 = 1097,y,1220,235
+        pieces.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" '
+                      f'stroke="{out_color if is_output else gray}" '
+                      f'stroke-width="{3.4 if is_output else 1.5}" '
+                      f'stroke-opacity="{1 if is_output else .45}" '
+                      + (f'marker-end="url(#{"bptt_back" if backward else "bptt_fwd"})"' if is_output else '') + '/>')
+    pieces.append(f'<text x="1160" y="188" text-anchor="middle" fill="{ink}" '
+                  f'font-size="17">{"Wᵧᵀ" if backward else "Wᵧ"}</text>')
+    pieces.append(f'<circle cx="1247" cy="235" r="29" fill="{out_color}" '
+                  f'fill-opacity="{.24 if is_output else .08}" '
+                  f'stroke="{out_color if is_output else gray}" '
+                  f'stroke-width="{3 if is_output else 1.5}"/>')
+    pieces.append(f'<text x="1247" y="241" text-anchor="middle" '
+                  f'fill="{ink}" font-size="19">ŷ₃</text>')
+    loss_color = orange if backward else teal
     if backward:
-        items.append('<path d="M 975 166 L 941 166 L 941 148" fill="none" stroke="#e59b3c" stroke-width="2.5" marker-end="url(#arrowback)"/>')
-        items.append('<text x="992" y="185" text-anchor="middle" fill="#e59b3c" font-size="12">Gradiente ←</text>')
-    items.append(f'<text x="550" y="237" text-anchor="middle" fill="#dbe6ee" font-size="13">{"Retropropagación: t=3 → t=1" if backward else "Actualización de los pesos compartidos" if updating else "Propagación hacia adelante: t=1 → t=3"}</text>')
-    items.append('</svg>')
-    return ''.join(items)
+        x1,x2=1385,1278
+    else:
+        x1,x2=1276,1385
+    pieces.append(f'<line x1="{x1}" y1="235" x2="{x2}" y2="235" '
+                  f'stroke="{loss_color if is_loss else gray}" '
+                  f'stroke-width="{3 if is_loss else 1.4}" '
+                  + (f'marker-end="url(#{"bptt_back" if backward else "bptt_fwd"})"' if is_loss else '') + '/>')
+    pieces.append(f'<rect x="1388" y="202" width="174" height="66" rx="13" '
+                  f'fill="{loss_color}" fill-opacity="{.18 if is_loss else .06}" '
+                  f'stroke="{loss_color if is_loss else gray}" '
+                  f'stroke-width="{3 if is_loss else 1.5}"/>')
+    pieces.append(f'<text x="1475" y="242" text-anchor="middle" '
+                  f'fill="{ink}" font-size="18" font-weight="600">Pérdida L</text>')
+    caption = ('Backward: derivadas desde L hasta h₃, h₂ y h₁ (Wₕᵀ)' if backward
+               else 'Actualización de los pesos compartidos' if updating
+               else 'Forward: estados h₀ → h₁ → h₂ → h₃ → ŷ₃ → L')
+    pieces.append(f'<text x="800" y="332" text-anchor="middle" fill="{ink}" '
+                  f'font-size="17" font-weight="600">{caption}</text>')
+    pieces.append('</svg>')
+    return ''.join(pieces)
 
 def show_visual_step(step, result):
     section,t,neuron=_visual_context(step)
@@ -323,7 +407,6 @@ with manual:
             if st.button(label,key='jump_'+label,use_container_width=True,disabled=index is None):
                 st.session_state.step=index
                 st.rerun()
-    current=steps[st.session_state.step]
     current=steps[st.session_state.step]
     show_visual_step(current,result)
     st.markdown(f'<div style="font-size:2rem;font-weight:800;color:{"#c17b25" if current["section"]=="Backward" else "#159c94" if current["section"]=="Forward" else "#5865c8"};padding:10px 0">{html.escape(current["section"])} · {html.escape(current["title"])}</div>',unsafe_allow_html=True)
