@@ -10,7 +10,7 @@ def mostrar_werbos_sensibilidades():
         "pseudocódigo de Werbos y cómo se relaciona con BPTT."
     )
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "1. Sensibilidad",
         "2. Propagación",
         "3. Acumulación",
