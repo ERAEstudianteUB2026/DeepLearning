@@ -432,7 +432,12 @@ def show_bptt_roadmap():
     st.latex(r'G_h^{(t)}=\delta_t h_{t-1}^T,\qquad \nabla_{W_h}\mathcal L=\sum_{t=1}^{3}G_h^{(t)}')
     st.latex(r'G_x^{(t)}=\delta_t x_t^T,\qquad \nabla_{W_x}\mathcal L=\sum_{t=1}^{3}G_x^{(t)}')
 
-route, manual, training=st.tabs(['Ruta del Backward', 'Cálculo paso a paso','Entrenamiento visual'])
+route, manual, training, werbos = st.tabs([
+    'Ruta del Backward',
+    'Cálculo paso a paso',
+    'Entrenamiento visual',
+    'Werbos: sensibilidades y gradientes'
+])
 with route:
     with st.expander('📐 Matrices de pesos actuales (se actualizan con cada época)',expanded=True):
         mcols=st.columns(3)
@@ -587,3 +592,9 @@ with training:
         st.markdown('**Historial de entrenamiento**')
         st.dataframe(pd.DataFrame(st.session_state.history),hide_index=True,use_container_width=True)
     st.caption('Ejemplo con una única secuencia: el objetivo es ilustrar BPTT, no evaluar generalización.')
+# ======================================================
+# NUEVA PESTAÑA: WERBOS Y NUESTRA NOTACIÓN
+# ======================================================
+
+with werbos:
+    mostrar_werbos_sensibilidades()
