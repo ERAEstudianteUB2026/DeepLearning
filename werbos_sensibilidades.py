@@ -14,8 +14,7 @@ def mostrar_werbos_sensibilidades():
         "1. Sensibilidad",
         "2. Propagación",
         "3. Acumulación",
-        "4. Comparación",
-        "5. Preguntas del docente"
+        "4. Comparación"
     ])
 
     # ======================================================
