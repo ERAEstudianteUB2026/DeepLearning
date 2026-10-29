@@ -3,6 +3,8 @@ import time
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
+import graphviz
 
 st.set_page_config(page_title="Laboratorio RNN y BPTT", page_icon="🧮", layout="wide")
 st.title("Laboratorio interactivo de RNN y BPTT")
@@ -355,25 +357,43 @@ def show_bptt_roadmap():
     if 'roadmap_selected' not in st.session_state: st.session_state.roadmap_selected=0
     # Diagrama ramificado: la ruta principal y los tres gradientes de parámetros.
     st.markdown('#### Diagrama de dependencias')
-    st.graphviz_chart(r"""digraph BPTT {
-      graph [rankdir=TB, bgcolor="transparent", nodesep=0.32, ranksep=0.36];
-      node [shape=box, style="rounded,filled", fillcolor="#edf3fa", color="#8fa5bd", fontname="Helvetica", fontsize=13];
-      edge [color="#7d92ab", arrowsize=.7];
-      B1 [label="B1 · Error de salida"];
-      B2 [label="B2 · Gradiente h₃"];
+    # Grafo compacto: se adapta a la pantalla sin ampliarse verticalmente.
+    dot = r"""digraph BPTT {
+      graph [rankdir=TB, bgcolor="transparent", nodesep=0.12, ranksep=0.18,
+             margin=0, pad=0.03, splines=polyline];
+      node [shape=box, style="rounded,filled", fillcolor="#edf3fa",
+            color="#8fa5bd", fontname="Helvetica", fontsize=10,
+            margin="0.08,0.045", penwidth=1];
+      edge [color="#7d92ab", arrowsize=0.45, penwidth=0.85];
+      B1 [label="B1 · Error salida"];
+      B2 [label="B2 · ∇h₃"];
       B3 [label="B3 · δ₃"];
       B4 [label="B4 · ∇Wy", fillcolor="#e2f5f0"];
-      B5 [label="B5 · Gradiente h₂"];
+      B5 [label="B5 · ∇h₂"];
       B6 [label="B6 · δ₂"];
-      B7 [label="B7 · Gradiente h₁"];
+      B7 [label="B7 · ∇h₁"];
       B8 [label="B8 · δ₁"];
       B9 [label="B9 · ∇Wh", fillcolor="#e2f5f0"];
       B10 [label="B10 · ∇Wx", fillcolor="#e2f5f0"];
       B1 -> B2 -> B3 -> B5 -> B6 -> B7 -> B8;
       B1 -> B4;
-      B3 -> B9 [style=dashed]; B6 -> B9 [style=dashed]; B8 -> B9 [style=dashed];
-      B3 -> B10 [style=dashed]; B6 -> B10 [style=dashed]; B8 -> B10 [style=dashed];
-    }""", use_container_width=True)
+      B3 -> B9 [style=dashed, constraint=false];
+      B6 -> B9 [style=dashed, constraint=false];
+      B8 -> B9 [style=dashed];
+      B3 -> B10 [style=dashed, constraint=false];
+      B6 -> B10 [style=dashed, constraint=false];
+      B8 -> B10 [style=dashed];
+      {rank=same; B9; B10;}
+    }"""
+    svg = graphviz.Source(dot).pipe(format="svg").decode("utf-8")
+    # El contenedor ajusta el SVG al ancho y limita su alto a 350 px.
+    components.html(
+        "<style>html,body{margin:0;padding:0;overflow:hidden;}"
+        ".diagram{width:100%;height:345px;display:flex;justify-content:center;align-items:center;}"
+        ".diagram svg{max-width:100%;max-height:340px;width:auto;height:auto;}"
+        "</style><div class='diagram'>" + svg + "</div>",
+        height=350, scrolling=False,
+    )
     cols=st.columns(5)
     for i,(code,formula,purpose) in enumerate(BPTT_GUIDE):
         with cols[i%5]:
