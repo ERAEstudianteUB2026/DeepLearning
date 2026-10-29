@@ -110,7 +110,22 @@ def build_steps(net,X,h0,target,result,grad,eta):
     add('Backward','Derivada de salida',r'e_3=\frac{\partial\mathcal L}{\partial\hat y_3}=\hat y_3-y',
         rf'e_3={fnum(result["yhat"])}-{fnum(target)}',rf'e_3={fnum(result["error"])}',
         'Es el punto de partida de la propagación hacia atrás.')
+    # B2: derivada respecto del último estado oculto, antes de delta_3.
+    g_h3=net.Wy.T[:,0]*result['error']
+    add('Backward','B2: gradiente respecto de h3',
+        r'\nabla_{h_3}\mathcal L=W_y^T(\hat y_3-y)',
+        rf'\nabla_{{h_3}}\mathcal L={matrix_text(net.Wy.T)}({fnum(result["error"])})',
+        rf'\nabla_{{h_3}}\mathcal L={matrix_text(g_h3.reshape(-1,1))}',
+        'B2 lleva el error desde la salida hasta el estado oculto final.')
     for t in (2,1,0):
+        if t in (1,0):
+            upstream_h=net.Wh.T@grad['delta'][t+1]
+            label='B5' if t==1 else 'B7'
+            add('Backward',f'{label}: gradiente respecto de h{t+1}',
+                rf'\nabla_{{h_{{{t+1}}}}}\mathcal L=W_h^T\delta_{{{t+2}}}',
+                rf'\nabla_{{h_{{{t+1}}}}}\mathcal L={matrix_text(net.Wh.T)}{matrix_text(grad["delta"][t+1].reshape(-1,1))}',
+                rf'\nabla_{{h_{{{t+1}}}}}\mathcal L={matrix_text(upstream_h.reshape(-1,1))}',
+                'El gradiente retrocede por las conexiones recurrentes.')
         d=grad['delta'][t]; h=result['h'][t+1]
         upstream=net.Wy.T[:,0]*result['error'] if t==2 else net.Wh.T@grad['delta'][t+1]
         for i in range(2):
@@ -145,8 +160,8 @@ def build_steps(net,X,h0,target,result,grad,eta):
         steps[index+1:index+1]=inserts
     for key,formula,explanation in [
         ('Wy',r'\nabla_{W_y}\mathcal L=e_3h_3^\top','La matriz de salida contribuye únicamente en t=3.'),
-        ('Wx',r'\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}\delta_tx_t^\top','Los mismos pesos de entrada se utilizan en los tres tiempos.'),
-        ('Wh',r'\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}\delta_th_{t-1}^\top','Los pesos recurrentes se comparten y sus contribuciones se suman.')]:
+        ('Wh',r'\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}\delta_th_{t-1}^\top','Los pesos recurrentes se comparten y sus contribuciones se suman.'),
+        ('Wx',r'\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}\delta_tx_t^\top','Los mismos pesos de entrada se utilizan en los tres tiempos.')]:
         if key!='Wy':
             for t in range(3):
                 left=X[t] if key=='Wx' else result['h'][t]
@@ -165,6 +180,13 @@ def build_steps(net,X,h0,target,result,grad,eta):
             rf'{key}^{{(k+1)}}={matrix_text(old)}-{fnum(eta)}{matrix_text(grad[key])}',
             rf'{key}^{{(k+1)}}={matrix_text(new)}',
             'La actualización usa descenso del gradiente, sin diferenciación automática.')
+    # Orden pedagógico B1→B10: mover B4 inmediatamente después de B3.
+    wy_steps=[z for z in steps if z['section']=='Backward' and z['title']=='Gradiente total de Wy']
+    if wy_steps:
+        steps[:]=[z for z in steps if z not in wy_steps]
+        idx=max(i for i,z in enumerate(steps) if z['section']=='Backward' and
+                ('Delta en t=3' in z['title'] or 'Delta matricial en t=3' in z['title']))
+        steps[idx+1:idx+1]=wy_steps
     return steps
 
 # Capa visual adicional: conserva íntegramente los pasos matemáticos originales.
@@ -175,6 +197,9 @@ def _visual_context(step):
     section=step['section']; title=step['title']
     m=re.search(r'(?:Tiempo |t=)([123])',title)
     t=int(m.group(1)) if m else (3 if section=='Forward' else 1)
+    if title.startswith('B2:'): t=3
+    if title.startswith('B5:'): t=2
+    if title.startswith('B7:'): t=1
     neuron=None
     match=re.search(r'a_\{([12]),|h_\{([12]),|neurona ([12])',title)
     if match:
@@ -188,8 +213,9 @@ def _network_svg(step):
     backward = section == 'Backward'
     teal, orange, gray, ink = '#087f78', '#c66c14', '#9aaabc', '#263647'
     active = orange if backward else teal
-    is_delta = backward and title.startswith('Delta ')
+    is_delta = backward and (title.startswith('Delta ') or title.startswith('Delta matricial'))
     is_output_derivative = backward and title == 'Derivada de salida'
+    is_state_grad = backward and (title.startswith('B2:') or title.startswith('B5:') or title.startswith('B7:'))
     is_gwx = backward and ('Contribución a ∇Wx' in title or 'Gradiente total de Wx' in title)
     is_gwh = backward and ('Contribución a ∇Wh' in title or 'Gradiente total de Wh' in title)
     is_gwy = backward and title == 'Gradiente total de Wy'
@@ -198,11 +224,11 @@ def _network_svg(step):
     forward_output = section == 'Forward' and 'Predicción' in title
     forward_loss = section == 'Forward' and title == 'Pérdida'
     # No iluminar la salida al calcular delta_2 o delta_1.
-    output_edge = forward_output or (is_delta and t == 3) or is_gwy
+    output_edge = forward_output or (is_delta and t == 3) or is_gwy or (is_state_grad and title.startswith('B2:'))
     loss_edge = forward_loss or is_output_derivative
     # Cada etapa ilumina solo su tramo temporal correspondiente.
     recurrent_edge = ((forward_hidden and t > 1) or
-                      (is_delta and t in (1, 2)) or is_gwh)
+                      (is_delta and t in (1, 2)) or is_gwh or (is_state_grad and not title.startswith('B2:')))
     input_edge = forward_hidden or is_gwx
     selected_times = ({t} if forward_hidden or is_delta else
                       {t} if ('Contribución a' in title) else set())
@@ -361,7 +387,64 @@ with st.expander('📐 Matrices de pesos actuales (se actualizan con cada época
         with col:
             st.markdown(f'**{name} — {getattr(net,name).shape[0]} × {getattr(net,name).shape[1]}**')
             st.latex(rf'{name}={matrix_text(getattr(net,name))}')
-manual, training=st.tabs(['Cálculo paso a paso','Entrenamiento visual'])
+# Guía matemática B1–B10: no altera los cálculos originales.
+BPTT_GUIDE = [
+    ("B1", r"\frac{\partial\mathcal L}{\partial\hat y_3}=\hat y_3-y", "Obtener el error de salida"),
+    ("B2", r"\nabla_{h_3}\mathcal L=W_y^T(\hat y_3-y)", "Llevar el error al estado oculto h₃"),
+    ("B3", r"\delta_3=\nabla_{a_3}\mathcal L=D_3\nabla_{h_3}\mathcal L", "Atravesar tanh en t=3"),
+    ("B4", r"\nabla_{W_y}\mathcal L=(\hat y_3-y)h_3^T", "Calcular el gradiente de los pesos de salida"),
+    ("B5", r"\nabla_{h_2}\mathcal L=W_h^T\delta_3", "Retroceder del tiempo 3 al tiempo 2"),
+    ("B6", r"\delta_2=\nabla_{a_2}\mathcal L=D_2W_h^T\delta_3", "Atravesar tanh en t=2"),
+    ("B7", r"\nabla_{h_1}\mathcal L=W_h^T\delta_2", "Retroceder del tiempo 2 al tiempo 1"),
+    ("B8", r"\delta_1=\nabla_{a_1}\mathcal L=D_1W_h^T\delta_2", "Atravesar tanh en t=1"),
+    ("B9", r"\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}\delta_th_{t-1}^T", "Acumular gradientes de los pesos recurrentes"),
+    ("B10", r"\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}\delta_tx_t^T", "Acumular gradientes de los pesos de entrada"),
+]
+
+def bptt_step_info(step):
+    """Identifica B1–B10 a partir de títulos originales, sin borrar ningún paso."""
+    title = step['title']
+    if step['section'] != 'Backward':
+        return None
+    if title == 'Derivada de salida': return 0
+    if title.startswith('B2:'): return 1
+    if title.startswith('B5:'): return 4
+    if title.startswith('B7:'): return 6
+    if title == 'Gradiente total de Wy': return 3
+    if title == 'Gradiente total de Wh' or 'Contribución a ∇Wh' in title: return 8
+    if title == 'Gradiente total de Wx' or 'Contribución a ∇Wx' in title: return 9
+    if 'Delta ' in title or 'Delta matricial' in title:
+        for t, idx in [(3,2),(2,5),(1,7)]:
+            if f't={t}' in title: return idx
+    return None
+
+def show_bptt_roadmap():
+    st.subheader('Ruta del Backward · antes de calcular')
+    st.write('Primero se observa el flujo completo; después se desarrolla cada derivada con fórmula, sustitución y resultado.')
+    st.latex(r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow h_2\longrightarrow a_2\longrightarrow h_1\longrightarrow a_1')
+    st.info('B4 calcula los pesos de salida. Después de B8 se acumulan los gradientes de los pesos compartidos en B9 y B10.')
+    st.markdown('### Orden definitivo de las derivadas')
+    for number, formula, purpose in BPTT_GUIDE:
+        c1,c2,c3=st.columns([1,4,5])
+        with c1: st.markdown(f'**{number}**')
+        with c2: st.latex(formula)
+        with c3: st.write(purpose)
+        st.divider()
+    st.markdown('### ¿Por qué B9 y B10 contienen sumas?')
+    st.latex(r'G_h^{(t)}=\delta_t h_{t-1}^T,\qquad G_x^{(t)}=\delta_t x_t^T')
+    st.latex(r'\nabla_{W_h}\mathcal L=G_h^{(1)}+G_h^{(2)}+G_h^{(3)}')
+    st.latex(r'\nabla_{W_x}\mathcal L=G_x^{(1)}+G_x^{(2)}+G_x^{(3)}')
+    st.caption('La misma matriz de pesos se usa en los tres instantes. Cada producto exterior es una contribución local.')
+    if st.button('Comenzar el Backward paso a paso', type='primary'):
+        index=next(i for i,z in enumerate(steps) if z['section']=='Backward')
+        st.session_state.step=index
+        st.session_state.show_backward_hint=True
+        st.rerun()
+
+route, manual, training=st.tabs(['Ruta del Backward', 'Cálculo paso a paso','Entrenamiento visual'])
+with route:
+    show_bptt_roadmap()
+
 with manual:
     st.subheader(f'Época {st.session_state.epoch} · cálculo manual')
     st.caption('Cada clic revela una fórmula, después su sustitución y finalmente su resultado.')
@@ -391,6 +474,15 @@ with manual:
     current=steps[st.session_state.step]
     show_visual_step(current,result)
     st.markdown(f'<div style="font-size:2rem;font-weight:800;color:{"#c17b25" if current["section"]=="Backward" else "#159c94" if current["section"]=="Forward" else "#5865c8"};padding:10px 0">{html.escape(current["section"])} · {html.escape(current["title"])}</div>',unsafe_allow_html=True)
+    if current['section']=='Backward':
+        guide_idx=bptt_step_info(current)
+        if guide_idx is not None:
+            code, formula, purpose = BPTT_GUIDE[guide_idx]
+            st.markdown(f'### {code} · {purpose}')
+            st.caption('Fórmula de referencia del paso que estamos desarrollando:')
+            st.latex(formula)
+        else:
+            st.caption('Cálculo auxiliar del Backward. Se conserva la fórmula original del procedimiento.')
     st.markdown(f'**{current["phase"]}**')
     st.latex(current['latex'])
     st.write(current['explanation'])
