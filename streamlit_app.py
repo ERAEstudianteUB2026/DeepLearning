@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from werbos_sensibilidades import mostrar_werbos_sensibilidades
 
 st.set_page_config(page_title="Laboratorio RNN y BPTT", page_icon="🧮", layout="wide")
 st.title("Laboratorio interactivo de RNN y BPTT")
