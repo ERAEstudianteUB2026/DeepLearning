@@ -511,24 +511,42 @@ def mostrar_fundamento_bptt(code):
     for formula in derivatives:
         st.latex(formula)
 
+# Navegación didáctica: en Backward, cada B1–B10 es una pantalla completa.
+# Los datos de steps y todas sus fórmulas permanecen intactos.
+manual_groups=[]
+for raw_index, item in enumerate(steps):
+    code=item.get('code') if item['section']=='Backward' else None
+    if code and manual_groups and manual_groups[-1]['code']==code:
+        manual_groups[-1]['indices'].append(raw_index)
+    else:
+        manual_groups.append({'code':code,'indices':[raw_index]})
+
+# Compatibilidad con los botones de la pestaña Ruta del Backward:
+# siguen guardando el índice original de steps.
+selected_group=next((i for i,g in enumerate(manual_groups)
+                     if st.session_state.step in g['indices']),0)
+
 with manual:
     st.subheader(f'Época {st.session_state.epoch} · cálculo manual')
-    st.caption('Cada clic revela una fórmula, después su sustitución y finalmente su resultado.')
+    st.caption('En B1–B10, un clic muestra la derivación, la sustitución, todas las operaciones matriciales y el resultado de cada B.')
     c1,c2,c3=st.columns([1,1,2])
     with c1:
-        if st.button('← Anterior',disabled=st.session_state.step==0,use_container_width=True):
-            st.session_state.step-=1;st.rerun()
+        if st.button('← Anterior',disabled=selected_group==0,use_container_width=True):
+            st.session_state.step=manual_groups[selected_group-1]['indices'][0]
+            st.rerun()
     with c2:
-        if st.button('Siguiente →',disabled=st.session_state.step==len(steps)-1,use_container_width=True):
-            st.session_state.step+=1;st.rerun()
+        if st.button('Siguiente →',disabled=selected_group==len(manual_groups)-1,use_container_width=True):
+            st.session_state.step=manual_groups[selected_group+1]['indices'][0]
+            st.rerun()
     with c3:
-        st.progress((st.session_state.step+1)/len(steps),text=f'Paso {st.session_state.step+1} de {len(steps)}')
+        st.progress((selected_group+1)/len(manual_groups),
+                    text=f'Paso {selected_group+1} de {len(manual_groups)}')
     st.markdown('**Ir directamente a:**')
     targets=[('Inicio forward',lambda z:z['section']=='Forward'),
              ('t = 1',lambda z:z['section']=='Forward' and z['title'].startswith('Tiempo 1:')),
              ('t = 2',lambda z:z['section']=='Forward' and z['title'].startswith('Tiempo 2:')),
              ('t = 3',lambda z:z['section']=='Forward' and z['title'].startswith('Tiempo 3:')),
-             ('Salida final',lambda z:z['section']=='Forward' and z['title']=='Predicción final'),
+             ('Salida final',lambda z:z['section']=='Forward' and z['title']=='Predicción matricial'),
              ('Inicio backward',lambda z:z['section']=='Backward')]
     navcols=st.columns(6)
     for (label,predicate),column in zip(targets,navcols):
@@ -537,25 +555,41 @@ with manual:
             if st.button(label,key='jump_'+label,use_container_width=True,disabled=index is None):
                 st.session_state.step=index
                 st.rerun()
-    current=steps[st.session_state.step]
+
+    group=manual_groups[selected_group]
+    current=steps[group['indices'][0]]
     show_visual_step(current,result)
-    st.markdown(f'<div style="font-size:2rem;font-weight:800;color:{"#c17b25" if current["section"]=="Backward" else "#159c94" if current["section"]=="Forward" else "#5865c8"};padding:10px 0">{html.escape(current["section"])} · {html.escape(current["title"])}</div>',unsafe_allow_html=True)
-    if current['section']=='Backward':
+    st.markdown(f'<div style="font-size:2rem;font-weight:800;color:{"#c17b25" if current["section"]=="Backward" else "#159c94" if current["section"]=="Forward" else "#5865c8"};padding:10px 0">{html.escape(current["section"])} · {html.escape(current["title"] if not group["code"] else group["code"] + " · Desarrollo completo")}</div>',unsafe_allow_html=True)
+    if group['code']:
         guide_idx=bptt_step_info(current)
         if guide_idx is not None:
-            code, formula, purpose = BPTT_GUIDE[guide_idx]
+            code, formula, purpose=BPTT_GUIDE[guide_idx]
             st.markdown(f'### {code} · {purpose}')
             mostrar_fundamento_bptt(code)
-        else:
-            st.caption('Cálculo matricial del Backward.')
-    st.markdown(f'**{current["phase"]}**')
-    st.latex(current['latex'])
-    st.write(current['explanation'])
+
+    # Un grupo B puede contener varios cálculos: B9/B10 reúnen
+    # las tres contribuciones temporales y la suma final.
+    last_title=None
+    for index in group['indices']:
+        item=steps[index]
+        if group['code'] and item['title']!=last_title:
+            st.markdown(f'#### {item["title"]}')
+            last_title=item['title']
+        st.markdown(f'**{item["phase"]}**')
+        st.latex(item['latex'])
+        st.write(item['explanation'])
+
     with st.expander('Historial de pasos ya revelados',expanded=False):
-        for i,s in enumerate(steps[:st.session_state.step+1]):
-            st.markdown(f'**{i+1}. {s["section"]} — {s["title"]} ({s["phase"]})**')
-            st.latex(s['latex'])
-    if st.session_state.step==len(steps)-1:
+        for i,g in enumerate(manual_groups[:selected_group+1],1):
+            first=steps[g['indices'][0]]
+            st.markdown(f'**{i}. {first["section"]} — {g["code"] or first["title"]}**')
+            for j in g['indices']:
+                item=steps[j]
+                if len(g['indices'])>1:
+                    st.caption(f'{item["title"]} · {item["phase"]}')
+                st.latex(item['latex'])
+
+    if selected_group==len(manual_groups)-1:
         if st.button('Aplicar actualización y comenzar siguiente época',type='primary'):
             st.session_state.history.append({'Época':st.session_state.epoch,'Predicción':result['yhat'],'Pérdida':result['loss']})
             st.session_state.net=BPTTManual.update(net,grad,eta)
