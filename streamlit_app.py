@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-import graphviz
 
 st.set_page_config(page_title="Laboratorio RNN y BPTT", page_icon="🧮", layout="wide")
 st.title("Laboratorio interactivo de RNN y BPTT")
@@ -357,43 +356,52 @@ def show_bptt_roadmap():
     if 'roadmap_selected' not in st.session_state: st.session_state.roadmap_selected=0
     # Diagrama ramificado: la ruta principal y los tres gradientes de parámetros.
     st.markdown('#### Diagrama de dependencias')
-    # Grafo compacto: se adapta a la pantalla sin ampliarse verticalmente.
-    dot = r"""digraph BPTT {
-      graph [rankdir=TB, bgcolor="transparent", nodesep=0.12, ranksep=0.18,
-             margin=0, pad=0.03, splines=polyline];
-      node [shape=box, style="rounded,filled", fillcolor="#edf3fa",
-            color="#8fa5bd", fontname="Helvetica", fontsize=10,
-            margin="0.08,0.045", penwidth=1];
-      edge [color="#7d92ab", arrowsize=0.45, penwidth=0.85];
-      B1 [label="B1 · Error salida"];
-      B2 [label="B2 · ∇h₃"];
-      B3 [label="B3 · δ₃"];
-      B4 [label="B4 · ∇Wy", fillcolor="#e2f5f0"];
-      B5 [label="B5 · ∇h₂"];
-      B6 [label="B6 · δ₂"];
-      B7 [label="B7 · ∇h₁"];
-      B8 [label="B8 · δ₁"];
-      B9 [label="B9 · ∇Wh", fillcolor="#e2f5f0"];
-      B10 [label="B10 · ∇Wx", fillcolor="#e2f5f0"];
-      B1 -> B2 -> B3 -> B5 -> B6 -> B7 -> B8;
-      B1 -> B4;
-      B3 -> B9 [style=dashed, constraint=false];
-      B6 -> B9 [style=dashed, constraint=false];
-      B8 -> B9 [style=dashed];
-      B3 -> B10 [style=dashed, constraint=false];
-      B6 -> B10 [style=dashed, constraint=false];
-      B8 -> B10 [style=dashed];
-      {rank=same; B9; B10;}
-    }"""
-    svg = graphviz.Source(dot).pipe(format="svg").decode("utf-8")
-    # El contenedor ajusta el SVG al ancho y limita su alto a 350 px.
-    components.html(
-        "<style>html,body{margin:0;padding:0;overflow:hidden;}"
-        ".diagram{width:100%;height:345px;display:flex;justify-content:center;align-items:center;}"
-        ".diagram svg{max-width:100%;max-height:340px;width:auto;height:auto;}"
-        "</style><div class='diagram'>" + svg + "</div>",
-        height=350, scrolling=False,
-    )
+    # SVG autónomo: no requiere el módulo Python graphviz ni ejecutables externos.
+    positions = {
+        'B1': (140, 23), 'B2': (140, 65), 'B3': (140, 107),
+        'B5': (140, 149), 'B6': (140, 191), 'B7': (140, 233),
+        'B8': (140, 275), 'B4': (420, 65),
+        'B9': (420, 233), 'B10': (620, 275),
+    }
+    labels = {
+        'B1': 'B1 · Error salida', 'B2': 'B2 · ∇h₃',
+        'B3': 'B3 · δ₃', 'B4': 'B4 · ∇Wy',
+        'B5': 'B5 · ∇h₂', 'B6': 'B6 · δ₂',
+        'B7': 'B7 · ∇h₁', 'B8': 'B8 · δ₁',
+        'B9': 'B9 · ∇Wh', 'B10': 'B10 · ∇Wx',
+    }
+    svg_parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 320" '
+        'style="width:100%;height:310px;max-width:750px;display:block;margin:auto" '
+        'role="img" aria-label="Diagrama compacto de dependencias B1 a B10">',
+        '<defs><marker id="flecha" markerWidth="6" markerHeight="6" refX="5" refY="3" '
+        'orient="auto"><path d="M0 0 L6 3 L0 6" fill="#8094ab"/></marker></defs>',
+    ]
+    def edge(src, dst, dashed=False):
+        x1,y1=positions[src];x2,y2=positions[dst]
+        # Los trazos se detienen antes del centro del nodo.
+        if x1==x2:
+            sy=y1+14; ey=y2-14; sx=x1;ex=x2
+        else:
+            sx=x1+65;sy=y1;ex=x2-65;ey=y2
+        dash='stroke-dasharray="4 4"' if dashed else ''
+        svg_parts.append(f'<line x1="{sx}" y1="{sy}" x2="{ex}" y2="{ey}" '
+                         f'stroke="#8094ab" stroke-width="1.35" {dash} marker-end="url(#flecha)"/>')
+    for u,v in [('B1','B2'),('B2','B3'),('B3','B5'),('B5','B6'),
+                ('B6','B7'),('B7','B8'),('B1','B4')]:
+        edge(u,v)
+    for u in ['B3','B6','B8']:
+        edge(u,'B9',True)
+        edge(u,'B10',True)
+    for code,(x,y) in positions.items():
+        color='#e2f5f0' if code in ('B4','B9','B10') else '#edf3fa'
+        svg_parts.append(f'<rect x="{x-66}" y="{y-15}" width="132" height="30" '
+                         f'rx="8" fill="{color}" stroke="#8fa5bd" stroke-width="1.4"/>')
+        svg_parts.append(f'<text x="{x}" y="{y+5}" text-anchor="middle" '
+                         f'font-family="Arial,sans-serif" font-size="13" fill="#233247">'
+                         f'{labels[code]}</text>')
+    svg_parts.append('</svg>')
+    components.html(''.join(svg_parts), height=325, scrolling=False)
     cols=st.columns(5)
     for i,(code,formula,purpose) in enumerate(BPTT_GUIDE):
         with cols[i%5]:
