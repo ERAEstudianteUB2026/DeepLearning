@@ -1,273 +1,129 @@
-
 import streamlit as st
 
+
 def mostrar_werbos_sensibilidades():
+    """Guía conceptual independiente; no altera los cálculos de la RNN."""
     st.header("Sensibilidad, propagación y acumulación de gradientes")
     st.caption("Werbos (1990) ↔ nuestra RNN 2–2–1, T = 3")
-
-    st.info(
-        "Objetivo: comprender qué calcula cada operación del "
-        "pseudocódigo de Werbos y cómo se relaciona con BPTT."
-    )
+    st.info("Objetivo: explicar las operaciones de BPTT, su notación en Werbos y su correspondencia con B1–B10.")
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Sensibilidad",
-        "2. Propagación",
-        "3. Acumulación",
-        "4. Comparación"
+        "1. Sensibilidad", "2. Propagación", "3. Gradientes B4, B9 y B10", "4. Comparación"
     ])
 
-    # ======================================================
-    # 1. SENSIBILIDAD
-    # ======================================================
     with tab1:
         st.subheader("¿Qué es una sensibilidad?")
+        st.write("Una sensibilidad es una derivada de la pérdida respecto de una variable de la red. Debemos distinguir si derivamos respecto de la activación o de la preactivación.")
+        st.markdown("**Correspondencias de notación**")
+        st.latex(r"F_{x_i(t)}\ \longleftrightarrow\ \frac{\partial\mathcal L}{\partial h_{t,i}}")
+        st.latex(r"F_{\operatorname{net}_i(t)}\ \longleftrightarrow\ \delta_{t,i}=\frac{\partial\mathcal L}{\partial a_{t,i}}")
+        st.write("En la notación de Werbos, x_i(t) puede representar la activación de una neurona; no debe confundirse automáticamente con nuestra entrada externa x_t.")
+        st.markdown("**Ejemplo numérico en t = 3**")
+        st.latex(r"\boxed{\delta_{3,1}=\frac{\partial\mathcal L}{\partial a_{3,1}}\approx-0.128432}")
+        st.success("Este número es la sensibilidad de la pérdida respecto de la preactivación de la primera neurona oculta en t = 3.")
+        with st.expander("¿Por qué la sensibilidad respecto de h no es igual a la de a?"):
+            st.latex(r"a_t=W_xx_t+W_hh_{t-1},\qquad h_t=\tanh(a_t)")
+            st.latex(r"D_t=\operatorname{diag}(1-h_{t,1}^2,1-h_{t,2}^2)")
+            st.latex(r"\boxed{\delta_t=D_t\nabla_{h_t}\mathcal L}")
+            st.write("Se aplica la regla de la cadena al atravesar la activación tanh: esto ocurre en B3, B6 y B8.")
 
-        st.write(
-            "Una sensibilidad es una derivada de la función "
-            "de pérdida respecto de una variable de la red."
-        )
-
-        st.markdown("**Notación de Werbos:**")
-        st.latex(r"F_{x_i(t)}")
-
-        st.markdown("**Nuestra notación:**")
-        st.latex(
-            r"F_{x_i(t)}"
-            r"\longleftrightarrow"
-            r"\frac{\partial\mathcal L}{\partial h_{t,i}}"
-        )
-
-        st.latex(
-            r"F_{\operatorname{net}_i(t)}"
-            r"\longleftrightarrow"
-            r"\delta_{t,i}"
-            r"=\frac{\partial\mathcal L}{\partial a_{t,i}}"
-        )
-
-        st.markdown("**Ejemplo numérico:**")
-        st.latex(
-            r"\boxed{\delta_{3,1}"
-            r"=\frac{\partial\mathcal L}{\partial a_{3,1}}"
-            r"=-0.128432}"
-        )
-
-        st.success(
-            "Interpretación: esta derivada mide la sensibilidad "
-            "de la pérdida respecto de la preactivación "
-            "de la primera neurona en t = 3."
-        )
-
-        with st.expander("¿Qué diferencia hay entre h y a?"):
-            st.latex(r"a_t=W_xx_t+W_hh_{t-1}")
-            st.latex(r"h_t=\tanh(a_t)")
-            st.write(
-                "a es la preactivación y h es la activación. "
-                "Sus sensibilidades no son iguales: se relacionan "
-                "mediante la derivada de tanh."
-            )
-            st.latex(
-                r"\delta_t=D_t\nabla_{h_t}\mathcal L"
-            )
-
-    # ======================================================
-    # 2. PROPAGACIÓN
-    # ======================================================
     with tab2:
-        st.subheader("¿Qué significa propagar sensibilidad?")
+        st.subheader("¿Qué significa propagar una sensibilidad?")
+        st.write("Utilizar sensibilidades posteriores conocidas para calcular las de variables anteriores, siguiendo las dependencias de la red y la regla de la cadena.")
+        st.markdown("**Escritura de acumulación de contribuciones en notación de Werbos (conexiones de retardo 1)**")
+        st.latex(r"F_{x_i(t)}\leftarrow F_{x_i(t)}+W'_{ji}F_{\operatorname{net}_j(t+1)}")
+        st.markdown("**Nuestra RNN — B5**")
+        st.latex(r"\boxed{\nabla_{h_2}\mathcal L=W_h^T\delta_3}")
+        st.markdown("**Justificación de la transpuesta**")
+        st.latex(r"a_{t+1,j}=\cdots+(W_h)_{ji}h_{t,i}+\cdots")
+        st.latex(r"\frac{\partial a_{t+1,j}}{\partial h_{t,i}}=(W_h)_{ji}")
+        st.latex(r"\frac{\partial\mathcal L}{\partial h_{2,i}}=\sum_{j=1}^{2}(W_h)_{ji}\delta_{3,j}")
+        st.write("Cada neurona posterior aporta una parte de la derivada respecto del estado anterior. La suma por componentes se expresa matricialmente como Wₕᵀδ₃.")
+        st.markdown("**Ejemplo numérico: primera neurona de t = 2**")
+        st.latex(r"W_h=\begin{pmatrix}0.5&0.1\\0.1&0.5\end{pmatrix},\qquad \delta_3\approx\begin{pmatrix}-0.128432\\-0.189010\end{pmatrix}")
+        st.latex(r"\frac{\partial\mathcal L}{\partial h_{2,1}}=0.5(-0.128432)+0.1(-0.189010)\approx\boxed{-0.083117}")
+        st.markdown("**¿Qué significa actualizar una sensibilidad en el pseudocódigo?**")
+        st.write("Aquí actualizar significa agregar otra contribución al acumulador de la derivada, NO modificar los pesos.")
+        st.latex(r"S_0=0,\quad S_1=S_0+0.5(-0.128432)=-0.064216")
+        st.latex(r"S_2=S_1+0.1(-0.189010)\approx-0.083117")
+        with st.expander("Relación con B6 y B7"):
+            st.latex(r"\underbrace{\nabla_{h_2}\mathcal L=W_h^T\delta_3}_{\mathrm{B5}}")
+            st.latex(r"\underbrace{\delta_2=D_2W_h^T\delta_3}_{\mathrm{B6}}")
+            st.latex(r"\underbrace{\nabla_{h_1}\mathcal L=W_h^T\delta_2}_{\mathrm{B7}}")
+            st.write("B5 propaga al estado h₂, B6 atraviesa tanh para obtener δ₂ y B7 sigue propagando hacia h₁.")
 
-        st.write(
-            "Significa utilizar una sensibilidad posterior "
-            "que ya conocemos para calcular una sensibilidad anterior."
-        )
-
-        st.markdown("**Werbos:**")
-        st.latex(
-            r"F_{x_i(t)}\leftarrow F_{x_i(t)}"
-            r"+W'_{ji}F_{\operatorname{net}_j(t+1)}"
-        )
-
-        st.markdown("**Nuestra RNN — B5:**")
-        st.latex(
-            r"\boxed{\nabla_{h_2}\mathcal L=W_h^T\delta_3}"
-        )
-
-        st.markdown("**¿De dónde sale el peso?**")
-        st.latex(
-            r"a_{t+1,j}=\cdots+(W_h)_{ji}h_{t,i}+\cdots"
-        )
-        st.latex(
-            r"\frac{\partial a_{t+1,j}}{\partial h_{t,i}}"
-            r"=(W_h)_{ji}"
-        )
-
-        st.write(
-            "Por la regla de la cadena, cada neurona posterior "
-            "aporta una contribución a la derivada anterior."
-        )
-
-        st.latex(
-            r"\frac{\partial\mathcal L}{\partial h_{2,i}}"
-            r"=\sum_{j=1}^{2}(W_h)_{ji}\delta_{3,j}"
-        )
-
-        st.markdown("**Ejemplo con nuestros pesos:**")
-        st.latex(
-            r"W_h=\begin{pmatrix}"
-            r"0.5&0.1\\0.1&0.5"
-            r"\end{pmatrix}"
-        )
-        st.latex(
-            r"\delta_3=\begin{pmatrix}"
-            r"-0.128432\\-0.189010"
-            r"\end{pmatrix}"
-        )
-
-        st.markdown("**Primera neurona de t = 2:**")
-        st.latex(
-            r"\frac{\partial\mathcal L}{\partial h_{2,1}}"
-            r"=0.5(-0.128432)+0.1(-0.189010)"
-        )
-        st.latex(r"\boxed{-0.083117}")
-
-        st.markdown("**¿Qué significa actualizar?**")
-        st.write(
-            "Actualizar significa sumar una nueva contribución "
-            "a la derivada que estamos construyendo."
-        )
-
-        st.latex(r"S_0=0")
-        st.latex(r"S_1=0+0.5(-0.128432)=-0.064216")
-        st.latex(
-            r"S_2=-0.064216+0.1(-0.189010)=-0.083117"
-        )
-
-        st.success(
-            "Propagar: calcular una derivada anterior. "
-            "Actualizar: añadir una contribución al valor acumulado."
-        )
-
-        with st.expander("Relación con B6"):
-            st.write(
-                "B5 calcula la sensibilidad respecto de h₂. "
-                "B6 la transforma en sensibilidad respecto de a₂."
-            )
-            st.latex(
-                r"\boxed{\delta_2=D_2W_h^T\delta_3}"
-            )
-
-    # ======================================================
-    # 3. ACUMULACIÓN DE GRADIENTES
-    # ======================================================
     with tab3:
-        st.subheader("¿Qué significa acumular gradientes?")
+        st.subheader("Gradientes de las tres matrices: Wᵧ, Wₕ y Wₓ")
+        st.write("Un gradiente de pesos mide cómo cambia la pérdida cuando se modifica un parámetro. Cuando ese parámetro aparece varias veces en la red desplegada, sus contribuciones se suman.")
+        st.markdown("**Primero: ¿cómo se corresponden los pesos con Werbos?**")
+        st.latex(r"\boxed{W_h\ \longleftrightarrow\ W'\ \text{(conexiones con retardo de un instante)}}")
+        st.latex(r"\boxed{W_x\ \longleftrightarrow\ W\ \text{(conexiones del instante actual)}}")
+        st.latex(r"\boxed{W_y\ \longleftrightarrow\ W\ \text{(conexiones a la salida en el instante actual)}}")
+        st.warning("Correspondencia estructural, no igualdad literal entre matrices: Werbos usa W para conexiones sin retardo y W′ para conexiones con un retardo. Nuestra RNN distingue Wₓ (entrada→oculta) y Wᵧ (oculta→salida), que son bloques diferentes de conexiones sin retardo.")
 
-        st.write(
-            "Es sumar las contribuciones a la derivada "
-            "de un mismo peso compartido."
-        )
+        st.divider()
+        st.markdown("### B4 — Gradiente de los pesos de salida Wᵧ")
+        st.markdown("**Werbos: contribución de una conexión sin retardo**")
+        st.latex(r"F_{W_{ij}}\leftarrow F_{W_{ij}}+F_{\operatorname{net}_i(t)}x_j(t)")
+        st.write("En nuestra capa de salida, la activación de origen es h₃ y la salida es lineal; su sensibilidad de preactivación coincide con el error e = ŷ₃ − y.")
+        st.markdown("**Nuestra RNN — B4**")
+        st.latex(r"\boxed{\nabla_{W_y}\mathcal L=e\,h_3^T},\qquad e=\hat y_3-y")
+        st.latex(r"\nabla_{W_y}\mathcal L\approx\begin{pmatrix}-0.155349&-0.162671\end{pmatrix}")
+        st.write("En nuestra red many-to-one la pérdida se evalúa solo en t = 3: por eso Wᵧ recibe una sola contribución, aunque en una red con salidas y pérdidas en varios tiempos podría acumular más.")
 
-        st.markdown("**Werbos:**")
-        st.latex(
-            r"F_{W'_{ij}}\leftarrow F_{W'_{ij}}"
-            r"+F_{\operatorname{net}_i(t)}x_j(t-1)"
-        )
+        st.divider()
+        st.markdown("### B9 — Gradiente de los pesos recurrentes Wₕ")
+        st.markdown("**Werbos: conexiones con un retardo (W′)**")
+        st.latex(r"F_{W'_{ij}}\leftarrow F_{W'_{ij}}+F_{\operatorname{net}_i(t)}x_j(t-1)")
+        st.write("En nuestra RNN, la activación de origen con retardo es hₜ₋₁ y la sensibilidad de destino es δₜ.")
+        st.markdown("**Nuestra RNN — B9**")
+        st.latex(r"\boxed{\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}\delta_th_{t-1}^T}")
+        st.latex(r"\nabla_{W_h}\mathcal L=\underbrace{\delta_1h_0^T}_{t=1}+\underbrace{\delta_2h_1^T}_{t=2}+\underbrace{\delta_3h_2^T}_{t=3}")
+        st.info("Como h₀ = (0,0)ᵀ, el término de t = 1 es una matriz cero; los de t = 2 y t = 3 sí aportan al gradiente.")
+        st.latex(r"\nabla_{W_h}\mathcal L\approx\begin{pmatrix}-0.042127&-0.041740\\-0.058595&-0.059710\end{pmatrix}")
+        st.write("Se acumulan contribuciones temporales porque la MISMA matriz Wₕ interviene en cada transición recurrente.")
 
-        st.markdown("**Nuestra RNN — B9:**")
-        st.latex(
-            r"\boxed{\nabla_{W_h}\mathcal L"
-            r"=\sum_{t=1}^{3}\delta_th_{t-1}^T}"
-        )
+        st.divider()
+        st.markdown("### B10 — Gradiente de los pesos de entrada Wₓ")
+        st.markdown("**Werbos: conexiones sin retardo (W)**")
+        st.latex(r"F_{W_{ij}}\leftarrow F_{W_{ij}}+F_{\operatorname{net}_i(t)}x_j(t)")
+        st.write("Aquí la activación de origen es la entrada externa xₜ, y la sensibilidad de destino es δₜ.")
+        st.markdown("**Nuestra RNN — B10**")
+        st.latex(r"\boxed{\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}\delta_tx_t^T}")
+        st.latex(r"\nabla_{W_x}\mathcal L=\underbrace{\delta_1x_1^T}_{t=1}+\underbrace{\delta_2x_2^T}_{t=2}+\underbrace{\delta_3x_3^T}_{t=3}")
+        st.latex(r"\nabla_{W_x}\mathcal L\approx\begin{pmatrix}-0.176284&-0.208033\\-0.246349&-0.288920\end{pmatrix}")
+        st.write("Se suman las tres contribuciones porque la MISMA matriz Wₓ transforma las entradas en t = 1, 2 y 3.")
+        st.success("B4: Wᵧ recibe una contribución (solo salida final). B9: Wₕ acumula por tiempo. B10: Wₓ también acumula por tiempo.")
 
-        st.latex(
-            r"\nabla_{W_h}\mathcal L"
-            r"=\delta_1h_0^T+\delta_2h_1^T+\delta_3h_2^T"
-        )
-
-        st.markdown("**¿Por qué se suman?**")
-        st.write(
-            "Porque la misma matriz Wₕ participa en "
-            "los tres instantes. Cada uso aporta una parte "
-            "de la derivada respecto de esa matriz."
-        )
-
-        st.latex(
-            r"\underbrace{\delta_1h_0^T}_{t=1}"
-            r"+\underbrace{\delta_2h_1^T}_{t=2}"
-            r"+\underbrace{\delta_3h_2^T}_{t=3}"
-        )
-
-        st.info(
-            "Como h₀ = 0 en nuestro ejercicio, "
-            "la primera contribución al gradiente de Wₕ es cero."
-        )
-
-        st.markdown("**Resultado numérico B9:**")
-        st.latex(
-            r"\nabla_{W_h}\mathcal L="
-            r"\begin{pmatrix}"
-            r"-0.042127&-0.041740\\"
-            r"-0.058595&-0.059710"
-            r"\end{pmatrix}"
-        )
-
-        st.success(
-            "Aquí no estamos calculando una sensibilidad anterior. "
-            "Estamos reuniendo las contribuciones a los pesos recurrentes."
-        )
-
-    # ======================================================
-    # 4. COMPARACIÓN
-    # ======================================================
     with tab4:
-        st.subheader("Las tres operaciones, una al lado de otra")
-
+        st.subheader("Comparación directa para la exposición")
         st.markdown("### Sensibilidad")
-        st.latex(
-            r"F_{\operatorname{net}_i(t)}"
-            r"\longleftrightarrow\delta_{t,i}"
-        )
-        st.write("Es una derivada de la pérdida.")
-
+        st.latex(r"F_{\operatorname{net}_i(t)}\longleftrightarrow\delta_{t,i}")
+        st.write("Es una derivada respecto de la preactivación de una neurona.")
         st.divider()
-
         st.markdown("### Propagación — B5")
-        st.latex(
-            r"F_{x_i(t)}\leftarrow F_{x_i(t)}"
-            r"+W'_{ji}F_{\operatorname{net}_j(t+1)}"
-        )
-        st.latex(
-            r"\nabla_{h_2}\mathcal L=W_h^T\delta_3"
-        )
-        st.write(
-            "Calcula sensibilidades anteriores "
-            "a partir de sensibilidades posteriores."
-        )
-
+        st.latex(r"F_{x_i(t)}\leftarrow F_{x_i(t)}+W'_{ji}F_{\operatorname{net}_j(t+1)}")
+        st.latex(r"\boxed{\nabla_{h_2}\mathcal L=W_h^T\delta_3}")
+        st.write("Calcula la sensibilidad de un estado anterior usando la sensibilidad de un instante posterior.")
         st.divider()
-
-        st.markdown("### Acumulación — B9")
-        st.latex(
-            r"F_{W'_{ij}}\leftarrow F_{W'_{ij}}"
-            r"+F_{\operatorname{net}_i(t)}x_j(t-1)"
-        )
-        st.latex(
-            r"\nabla_{W_h}\mathcal L"
-            r"=\sum_{t=1}^{3}\delta_th_{t-1}^T"
-        )
-        st.write(
-            "Suma las contribuciones a los pesos "
-            "compartidos a través del tiempo."
-        )
-
+        st.markdown("### Gradiente de salida — B4")
+        st.latex(r"F_{W_{ij}}\leftarrow F_{W_{ij}}+F_{\operatorname{net}_i(t)}x_j(t)")
+        st.latex(r"\boxed{\nabla_{W_y}\mathcal L=e\,h_3^T}")
+        st.write("Bloque sin retardo; en nuestro caso solo hay contribución en t = 3.")
         st.divider()
-
+        st.markdown("### Acumulación recurrente — B9")
+        st.latex(r"F_{W'_{ij}}\leftarrow F_{W'_{ij}}+F_{\operatorname{net}_i(t)}x_j(t-1)")
+        st.latex(r"\boxed{\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}\delta_th_{t-1}^T}")
+        st.write("Bloque con retardo; se suman las contribuciones a Wₕ de los tres instantes.")
+        st.divider()
+        st.markdown("### Acumulación de entrada — B10")
+        st.latex(r"F_{W_{ij}}\leftarrow F_{W_{ij}}+F_{\operatorname{net}_i(t)}x_j(t)")
+        st.latex(r"\boxed{\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}\delta_tx_t^T}")
+        st.write("Bloque sin retardo; se suman las contribuciones a Wₓ de los tres instantes.")
+        st.divider()
         st.markdown("### La diferencia fundamental")
-        st.latex(
-            r"\underbrace{W_h^T\delta_3}_{\mathrm{B5:\ propagacion}}"
-            r"\neq"
-            r"\underbrace{\sum_{t=1}^{3}\delta_th_{t-1}^T}"
-            r"_{\mathrm{B9:\ acumulacion}}"
-        )
-
-   
+        st.write("**Propagar** calcula una sensibilidad de una variable anterior. **Acumular gradientes** suma contribuciones a un mismo parámetro compartido. Aunque ambos procedimientos contienen sumas, no calculan lo mismo.")
+        st.latex(r"\underbrace{W_h^T\delta_3}_{\mathrm{B5:\ sensibilidad\ de\ }h_2}")
+        st.latex(r"\underbrace{\sum_{t=1}^{3}\delta_th_{t-1}^T}_{\mathrm{B9:\ gradiente\ de\ }W_h}")
+        st.latex(r"\underbrace{\sum_{t=1}^{3}\delta_tx_t^T}_{\mathrm{B10:\ gradiente\ de\ }W_x}")
+        st.success("Sensibilidad = derivada. Propagación = calcular derivadas anteriores. Acumulación = sumar contribuciones al gradiente de pesos compartidos.")
