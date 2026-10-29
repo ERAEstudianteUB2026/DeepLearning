@@ -441,6 +441,70 @@ with route:
                 st.latex(rf'{name}={matrix_text(getattr(net,name))}')
     show_bptt_roadmap()
 
+
+# ÚNICAMENTE presentación conceptual: no interviene en el cálculo.
+def mostrar_fundamento_bptt(code):
+    L = r'\mathcal L'
+    flows = {
+        'B1': r'\mathcal L\longrightarrow\hat y_3',
+        'B2': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3',
+        'B3': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3',
+        'B4': r'\mathcal L\longrightarrow\hat y_3\longrightarrow W_y',
+        'B5': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow h_2',
+        'B6': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow h_2\longrightarrow a_2',
+        'B7': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow h_2\longrightarrow a_2\longrightarrow h_1',
+        'B8': r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow h_2\longrightarrow a_2\longrightarrow h_1\longrightarrow a_1',
+    }
+    formulas = {
+        'B1': (r'\frac{\partial\mathcal L}{\partial\hat y_3}',
+               [r'\mathcal L=\frac12(\hat y_3-y)^2'],
+               [r'\frac{\partial\mathcal L}{\partial\hat y_3}=\hat y_3-y']),
+        'B2': (r'\nabla_{h_3}\mathcal L',
+               [r'\hat y_3=W_yh_3',r'\mathcal L=\frac12(\hat y_3-y)^2'],
+               [r'\nabla_{h_3}\mathcal L=\left(\frac{\partial\hat y_3}{\partial h_3}\right)^T\frac{\partial\mathcal L}{\partial\hat y_3}',r'\frac{\partial\hat y_3}{\partial h_3}=W_y']),
+        'B3': (r'\delta_3=\nabla_{a_3}\mathcal L',
+               [r'h_3=\tanh(a_3)',r'\hat y_3=W_yh_3'],
+               [r'\nabla_{a_3}\mathcal L=\left(\frac{\partial h_3}{\partial a_3}\right)^T\nabla_{h_3}\mathcal L',r'D_3=\frac{\partial h_3}{\partial a_3}=\begin{pmatrix}1-h_{3,1}^2&0\\0&1-h_{3,2}^2\end{pmatrix}']),
+        'B4': (r'\nabla_{W_y}\mathcal L',
+               [r'\hat y_3=W_yh_3'],
+               [r'\frac{\partial\hat y_3}{\partial w_{y,j}}=h_{3,j}',r'\frac{\partial\mathcal L}{\partial w_{y,j}}=\frac{\partial\mathcal L}{\partial\hat y_3}h_{3,j}']),
+        'B5': (r'\nabla_{h_2}\mathcal L',
+               [r'a_3=W_xx_3+W_hh_2'],
+               [r'\nabla_{h_2}\mathcal L=\left(\frac{\partial a_3}{\partial h_2}\right)^T\delta_3',r'\frac{\partial a_3}{\partial h_2}=W_h']),
+        'B6': (r'\delta_2=\nabla_{a_2}\mathcal L',
+               [r'h_2=\tanh(a_2)',r'a_3=W_xx_3+W_hh_2'],
+               [r'\delta_2=\left(\frac{\partial h_2}{\partial a_2}\right)^T\nabla_{h_2}\mathcal L',r'D_2=\frac{\partial h_2}{\partial a_2}=\begin{pmatrix}1-h_{2,1}^2&0\\0&1-h_{2,2}^2\end{pmatrix}']),
+        'B7': (r'\nabla_{h_1}\mathcal L',
+               [r'a_2=W_xx_2+W_hh_1'],
+               [r'\nabla_{h_1}\mathcal L=\left(\frac{\partial a_2}{\partial h_1}\right)^T\delta_2',r'\frac{\partial a_2}{\partial h_1}=W_h']),
+        'B8': (r'\delta_1=\nabla_{a_1}\mathcal L',
+               [r'h_1=\tanh(a_1)',r'a_2=W_xx_2+W_hh_1'],
+               [r'\delta_1=\left(\frac{\partial h_1}{\partial a_1}\right)^T\nabla_{h_1}\mathcal L',r'D_1=\frac{\partial h_1}{\partial a_1}=\begin{pmatrix}1-h_{1,1}^2&0\\0&1-h_{1,2}^2\end{pmatrix}']),
+        'B9': (r'\nabla_{W_h}\mathcal L',
+               [r'a_t=W_xx_t+W_hh_{t-1}'],
+               [r'G_h^{(t)}=\left(\frac{\partial a_t}{\partial W_h}\right)^*\delta_t=\delta_th_{t-1}^T',r'\nabla_{W_h}\mathcal L=\sum_{t=1}^{3}G_h^{(t)}']),
+        'B10': (r'\nabla_{W_x}\mathcal L',
+               [r'a_t=W_xx_t+W_hh_{t-1}'],
+               [r'G_x^{(t)}=\left(\frac{\partial a_t}{\partial W_x}\right)^*\delta_t=\delta_tx_t^T',r'\nabla_{W_x}\mathcal L=\sum_{t=1}^{3}G_x^{(t)}']),
+    }
+    if code not in formulas:
+        return
+    objective, forward, derivatives = formulas[code]
+    st.markdown('**Derivada que queremos obtener**')
+    st.latex(objective)
+    st.markdown('**Flujo del Backward (desde la pérdida)**')
+    if code in flows:
+        st.latex(flows[code])
+    else:
+        st.latex(r'\mathcal L\longrightarrow\hat y_3\longrightarrow h_3\longrightarrow a_3\longrightarrow a_2\longrightarrow a_1\longrightarrow (\delta_1,\delta_2,\delta_3)\longrightarrow '+('W_h' if code=='B9' else 'W_x'))
+        st.caption('Esquema de dependencias: los deltas se obtienen retropropagando y luego se acumulan las contribuciones de los pesos compartidos.')
+    st.markdown('**Ecuaciones del Forward necesarias**')
+    for formula in forward:
+        st.latex(formula)
+    st.markdown('**Regla de la cadena y derivadas que intervienen**')
+    for formula in derivatives:
+        st.latex(formula)
+
 with manual:
     st.subheader(f'Época {st.session_state.epoch} · cálculo manual')
     st.caption('Cada clic revela una fórmula, después su sustitución y finalmente su resultado.')
@@ -475,8 +539,7 @@ with manual:
         if guide_idx is not None:
             code, formula, purpose = BPTT_GUIDE[guide_idx]
             st.markdown(f'### {code} · {purpose}')
-            st.caption('Fórmula de referencia del paso que estamos desarrollando:')
-            st.latex(formula)
+            mostrar_fundamento_bptt(code)
         else:
             st.caption('Cálculo matricial del Backward.')
     st.markdown(f'**{current["phase"]}**')
